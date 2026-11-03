@@ -12,7 +12,10 @@ Exemplos (desde a raíz do proxecto):
 """
 import argparse
 import random
-from datetime import date
+from datetime import date, timedelta
+import random
+
+
 
 from faker import Faker
 
@@ -60,30 +63,77 @@ def xera_albergues(n, rng):
 
 
 def xera_peregrinos(n, rng, fake):
-    """TODO (primeiro paso): devolve `n` peregrinos.
+    """Devolve `n` peregrinos reproducibles con documento e email únicos."""
+    peregrinos = []
+    paises = ["España", "Portugal", "Francia", "Alemaña", "Italia", "Reino Unido", "Estados Unidos"]
+    letras_nif = "TRWAGMYFPDXBNJZSQVHLCKE"
 
-    Cada peregrino é un dicionario con, polo menos: id, nome, apelidos, documento,
-    email, pais e data_nacemento.
+    for i in range(1, n + 1):
+        dias_vida = rng.randint(18 * 365, 75 * 365)
+        nacemento = date(2027, 1, 1) - timedelta(days=dias_vida)
 
-    Pistas:
-      - fake.first_name() e fake.last_name() dan nomes realistas.
-      - Faker(["es_ES", "pt_PT", "de_DE"]) mestura idiomas, pero para saber o país
-        de cada peregrino é máis cómodo ter un Faker por país.
-      - O documento e o email deben ser únicos.
-      - Coidado coa reproducibilidade: fake.date_of_birth() depende da data de hoxe,
-        así que mañá xeraría datos distintos coa mesma semente.
-    """
-    return pendente("xera_peregrinos")
+        num_doc = 10000000 + i
+        letra = letras_nif[num_doc % 23]
+        documento = f"{num_doc}{letra}"
+
+        email = f"peregrino_{i}_{fake.user_name()}@caminoaberto.gal"
+
+        peregrinos.append({
+            "id": i,
+            "nome": fake.first_name(),
+            "apelidos": f"{fake.last_name()} {fake.last_name()}",
+            "documento": documento,
+            "email": email,
+            "pais": rng.choice(paises),
+            "data_nacemento": nacemento,
+        })
+    return peregrinos
+
 
 
 def xera_reservas(n, albergues, peregrinos, desde, dias, rng):
-    """TODO: devolve ata `n` reservas entre `desde` e `desde + dias - 1`.
-
-    Regras do negocio:
-      - Nun albergue, as reservas dunha noite non poden superar as súas prazas.
-      - Un peregrino non pode ter dúas reservas a mesma noite.
+    """Devolve ata `n` reservas cumprindo:
+    - Non superar as prazas do albergue esa noite.
+    - Un peregrino non pode ter dúas reservas na mesma noite.
     """
-    return pendente("xera_reservas")
+    reservas = []
+    prazas_map = {a["id"]: a["prazas"] for a in albergues}
+    albergue_ids = [a["id"] for a in albergues]
+    peregrino_ids = [p["id"] for p in peregrinos]
+
+    ocupacion = {}           
+    peregrino_noite = set()   
+
+    intentos = 0
+    max_intentos = n * 50
+    reserva_id = 1
+
+    while len(reservas) < n and intentos < max_intentos:
+        intentos += 1
+        a_id = rng.choice(albergue_ids)
+        p_id = rng.choice(peregrino_ids)
+        dia_offset = rng.randint(0, dias - 1)
+        data_reserva = desde + timedelta(days=dia_offset)
+
+        if (p_id, data_reserva) in peregrino_noite:
+            continue
+
+        ocup_actual = ocupacion.get((a_id, data_reserva), 0)
+        if ocup_actual >= prazas_map[a_id]:
+            continue
+
+        ocupacion[(a_id, data_reserva)] = ocup_actual + 1
+        peregrino_noite.add((p_id, data_reserva))
+
+        reservas.append({
+            "id": reserva_id,
+            "albergue_id": a_id,
+            "peregrino_id": p_id,
+            "data_reserva": data_reserva,
+        })
+        reserva_id += 1
+
+    return reservas
 
 
 def xera_fichas(albergues, rng, fake):
@@ -127,6 +177,7 @@ def main():
 
     rng = random.Random(args.semente)
     fake = Faker("es_ES")
+    Faker.seed(args.semente)
     # TODO: Faker tamén ten a súa propia semente. Sen ela, os nomes cambian en cada execución.
 
     print(f"Semente {args.semente} · tempada {args.desde} + {args.dias} noites")
