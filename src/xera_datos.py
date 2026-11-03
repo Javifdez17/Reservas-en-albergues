@@ -1,3 +1,4 @@
+from pymongo import MongoClient
 """Xerador de datos de proba para a rede de albergues Camiño Aberto (ficticia).
 
 ESQUELETO DO P1. Xa funciona: xera albergues e mostra un resumo. O resto
@@ -14,6 +15,9 @@ import argparse
 import random
 from datetime import date, timedelta
 import random
+import os
+from dotenv import load_dotenv
+load_dotenv()
 
 
 
@@ -137,12 +141,54 @@ def xera_reservas(n, albergues, peregrinos, desde, dias, rng):
 
 
 def xera_fichas(albergues, rng, fake):
-    """TODO: devolve unha ficha por albergue para MongoDB.
+    """Devolve unha ficha por albergue con estrutura variable para MongoDB."""
+    fichas = []
+    servizos_comuns = ["cociña", "lavadora", "wifi", "almorzo", "calefacción", "taquillas"]
 
-    Mira o exemplo do enunciado (apartado 4.2): os campos deben variar dun
-    albergue a outro (non todos teñen web, opinións, garaxe para bicis...).
-    """
-    return pendente("xera_fichas")
+    for a in albergues:
+        es_privado = (a["id"] % 2 == 0)
+
+        if not es_privado:
+            ficha = {
+                "albergue_id": a["id"],
+                "nome": a["nome"],
+                "camino": a["camino"],
+                "concello": a["concello"],
+                "servizos": rng.sample(servizos_comuns, rng.randint(2, 3)),
+                "horario": {
+                    "apertura": f"{rng.randint(12, 14)}:00",
+                    "peche": "22:00"
+                },
+                "titularidade": "Xunta de Galicia"
+            }
+        else:
+            ficha = {
+                "albergue_id": a["id"],
+                "nome": a["nome"],
+                "camino": a["camino"],
+                "concello": a["concello"],
+                "servizos": rng.sample(servizos_comuns, rng.randint(4, 6)),
+                "horario": {
+                    "apertura": f"{rng.randint(10, 12)}:00",
+                    "peche": f"{rng.randint(22, 23)}:30"
+                },
+                "titularidade": "Privada",
+                "contacto": {
+                    "telefono": f"+34 98{rng.randint(1,8)} {rng.randint(100,999)} {rng.randint(100,999)}",
+                    "web": f"https://albergue{a['id']}.gal"
+                },
+                "admite_cans": rng.choice([True, False]),
+                "idiomas": ["galego", "castelán", rng.choice(["inglés", "francés", "alemán"])],
+                "opinions": [
+                    {"autor": fake.first_name(), "nota": rng.randint(3, 5), "texto": "Moi limpo e acolledor."},
+                    {"autor": fake.first_name(), "nota": rng.randint(4, 5), "texto": "Trato excelente no camiño."}
+                ]
+            }
+            if rng.choice([True, False]):
+                ficha["bicicletas"] = {"garaxe": True, "prazas": rng.randint(4, 15)}
+
+        fichas.append(ficha)
+    return fichas
 
 
 # ------------------------------------------------------------------ carga
@@ -152,8 +198,25 @@ def carga_postgres(albergues, peregrinos, reservas):
 
 
 def carga_mongo(fichas):
-    """TODO: garda as fichas nunha colección de MongoDB."""
-    pendente("carga_mongo")
+    """Insire as fichas na colección de MongoDB."""
+    mongo_user = os.getenv("MONGO_USER", "p1")
+    mongo_pass = os.getenv("MONGO_PASSWORD", "cambiame")
+    mongo_host = os.getenv("MONGO_HOST", "localhost")
+    mongo_db = os.getenv("MONGO_DB", "albergues")
+
+    client = MongoClient(
+        host=mongo_host,
+        port=27017,
+        username=mongo_user,
+        password=mongo_pass,
+        authSource="admin"
+    )
+    db = client[mongo_db]
+    db.fichas.drop()  
+    if fichas:
+        db.fichas.insert_many(fichas)
+    client.close()
+    print(f"  [MongoDB] Cargadas {len(fichas)} fichas na colección 'fichas'.")
 
 
 # ------------------------------------------------------------------ main
