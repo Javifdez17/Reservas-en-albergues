@@ -1,27 +1,15 @@
 from pymongo import MongoClient
-"""Xerador de datos de proba para a rede de albergues Camiño Aberto (ficticia).
-
-ESQUELETO DO P1. Xa funciona: xera albergues e mostra un resumo. O resto
-das funcións están marcadas con TODO e, mentres non as completes, avisan
-e devolven unha lista baleira para que o script se poida executar desde o
-primeiro día.
-
-Exemplos (desde a raíz do proxecto):
-  python -m src.xera_datos --sen-carga                    # só xerar e mostrar
-  python -m src.xera_datos --albergues 60 --semente 7 --sen-carga
-  python -m src.xera_datos                                 # xerar e cargar (cando estea feito)
-"""
 import argparse
 import random
 from datetime import date, timedelta
-import random
 import os
 from dotenv import load_dotenv
+from faker import Faker
+import psycopg2
+from psycopg2.extras import execute_values
+
 load_dotenv()
 
-
-
-from faker import Faker
 
 # ------------------------------------------------------------------ catálogos
 # Concellos galegos de cada camiño, en orde de etapas. Podes engadir máis.
@@ -193,8 +181,40 @@ def xera_fichas(albergues, rng, fake):
 
 # ------------------------------------------------------------------ carga
 def carga_postgres(albergues, peregrinos, reservas):
-    """TODO: crea as táboas (ou usa un script SQL de inicio) e insire os datos."""
-    pendente("carga_postgres")
+    """Executa o esquema SQL e insire todos os datos en PostgreSQL usando lotes."""
+    conn = psycopg2.connect(
+        host=os.getenv("PGHOST", "localhost"),
+        port=5432,
+        user=os.getenv("POSTGRES_USER", "p1"),
+        password=os.getenv("POSTGRES_PASSWORD", "cambiame"),
+        dbname=os.getenv("POSTGRES_DB", "albergues")
+    )
+    with conn.cursor() as cur:
+        with open("src/esquema.sql", "r", encoding="utf-8") as f:
+            cur.execute(f.read())
+
+        cur.execute("TRUNCATE reservas, peregrinos, albergues RESTART IDENTITY CASCADE;")
+
+        execute_values(cur, """
+            INSERT INTO albergues (id, nome, camino, concello, prazas, prezo)
+            VALUES %s
+        """, [(a["id"], a["nome"], a["camino"], a["concello"], a["prazas"], a["prezo"]) for a in albergues])
+
+        execute_values(cur, """
+            INSERT INTO peregrinos (id, nome, apelidos, documento, email, pais, data_nacemento)
+            VALUES %s
+        """, [(p["id"], p["nome"], p["apelidos"], p["documento"], p["email"], p["pais"], p["data_nacemento"]) for p in peregrinos])
+
+        execute_values(cur, """
+            INSERT INTO reservas (id, albergue_id, peregrino_id, data_reserva)
+            VALUES %s
+        """, [(r["id"], r["albergue_id"], r["peregrino_id"], r["data_reserva"]) for r in reservas])
+
+    conn.commit()
+    conn.close()
+    print(f"  [PostgreSQL] Cargados {len(albergues)} albergues, {len(peregrinos)} peregrinos e {len(reservas)} reservas.")
+
+
 
 
 def carga_mongo(fichas):
